@@ -51,7 +51,8 @@ const organicResultSchema = z.looseObject({
   domain: z.string().nullable(),
   url: z.string().nullable(),
   title: z.string().nullable(),
-  referringDomains: z.number().nullable(),
+  siteReferringDomains: z.number().nullable(),
+  pageReferringDomains: z.number().nullable(),
   isOurs: z.boolean(),
 });
 
@@ -59,7 +60,8 @@ const competitorSchema = z.looseObject({
   position: z.number().nullable(),
   domain: z.string().nullable(),
   url: z.string(),
-  referringDomains: z.number().nullable(),
+  siteReferringDomains: z.number().nullable(),
+  pageReferringDomains: z.number().nullable(),
   outline: pageOutlineSchema.nullable(),
   /** Set when `outline` is null: why the page couldn't be read. */
   unreadableReason: z.string().nullable(),
@@ -96,9 +98,17 @@ export const draftBenchmarkOutputSchema = z.looseObject({
       medianReferringDomains: z.number().nullable(),
       minReferringDomains: z.number().nullable(),
       maxReferringDomains: z.number().nullable(),
+      ourSiteReferringDomains: z.number().nullable(),
+      /** Secondary: counts for the exact ranking URLs, often incomplete. */
+      pageLevel: z.looseObject({
+        competitorsWithData: z.number(),
+        median: z.number().nullable(),
+        min: z.number().nullable(),
+        max: z.number().nullable(),
+      }),
     })
     .describe(
-      "Page-level referring domains across the competitor pages that were read, from DataForSEO's Backlinks API.",
+      "Main measure: whole-site referring domains (median/min/max) across the competitors' sites, plus our own site, from DataForSEO's Backlinks API. `pageLevel` holds the exact-URL counts, which DataForSEO often under-reports for deep pages.",
     ),
   /** Plain-language caveats, e.g. a trimmed draft or unreadable pages. */
   notes: z.array(z.string()),

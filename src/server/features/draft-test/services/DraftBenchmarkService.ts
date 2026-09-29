@@ -54,6 +54,10 @@ function unreadable(reason: string): PageRead {
   return { outline: null, unreadableReason: reason };
 }
 
+function present(values: (number | null)[]): number[] {
+  return values.filter((value): value is number => value !== null);
+}
+
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
   // eslint-disable-next-line unicorn/no-array-sort -- the TS lib target lacks toSorted, and this is our own copy
@@ -81,26 +85,68 @@ function extractPeopleAlsoAsk(items: SerpLiveItem[]): string[] {
   return [...new Set(questions)];
 }
 
+const TRACKING_PARAMS = new Set([
+  "gclid",
+  "dclid",
+  "gbraid",
+  "wbraid",
+  "fbclid",
+  "msclkid",
+  "yclid",
+  "igshid",
+  "srsltid",
+  "mc_cid",
+  "mc_eid",
+  "_ga",
+]);
+
+/** Drops tracking parameters so the lookup targets the page, not a campaign link. */
+function stripTrackingParams(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    const kept = new URLSearchParams();
+    for (const [name, value] of url.searchParams) {
+      if (!name.startsWith("utm_") && !TRACKING_PARAMS.has(name)) {
+        kept.append(name, value);
+      }
+    }
+    url.search = kept.toString();
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 /**
- * Page-level referring domains for the ranking URLs, in one Backlinks API
- * request. Never throws: if the API isn't available on the account or the call
- * fails, the rest of the benchmark still returns and the win check says why.
+ * The whole-site lookup target for a host. We use the root domain (no www):
+ * DataForSEO counts a bare domain together with its subdomains, and checked
+ * against real sites it returns the fuller figure, e.g. staircase.co.nz 101
+ * vs www.staircase.co.nz 62, smproperty.co.nz 51 vs www.smproperty.co.nz 3.
+ */
+function siteTarget(host: string): string {
+  return normalizeDomainInput(host, true);
+}
+
+type ReferringDomainCounts = Map<string, number | null>;
+
+/**
+ * Referring domains for the ranking pages and their whole sites, in one
+ * Backlinks API request. Never throws: if the API isn't available on the
+ * account or the call fails, the rest of the benchmark still returns and the
+ * win check says why.
  */
 async function lookupReferringDomains(
   client: ReturnType<typeof createDataforseoClient>,
-  urls: string[],
+  targets: string[],
 ): Promise<
-  | { counts: Map<string, number | null>; unavailableReason: null }
+  | { counts: ReferringDomainCounts; unavailableReason: null }
   | { counts: null; unavailableReason: string }
 > {
-  if (urls.length === 0) {
+  if (targets.length === 0) {
     return { counts: null, unavailableReason: "no ranking pages to look up" };
   }
   try {
-    // Targets go through exactly as the SERP reported them (www and full path).
-    const items = await client.backlinks.bulkReferringDomains({
-      targets: urls,
-    });
+    const items = await client.backlinks.bulkReferringDomains({ targets });
     return {
       counts: new Map(
         items.map((item) => [item.target, item.referring_domains ?? null]),
@@ -198,6 +244,17 @@ async function getBenchmark(input: {
         !result.isOurs && result.url !== null,
     )
     .slice(0, competitorCount);
+  const lookupTargets = [
+    ...new Set([
+      ...organic.flatMap((result) =>
+        result.url ? [stripTrackingParams(result.url)] : [],
+      ),
+      ...organic.flatMap((result) =>
+        result.domain ? [siteTarget(result.domain)] : [],
+      ),
+      ...(ours ? [siteTarget(ours)] : []),
+    ]),
+  ];
   const [competitorReads, ourPage, authority] = await Promise.all([
     Promise.all(
       competitorResults.map(async (result) => ({
@@ -209,34 +266,41 @@ async function getBenchmark(input: {
     ),
     // Step 5: break our draft (or live page) down the same way.
     outlineOurPage(input),
-    // Step 6a: page-level referring domains for the exact ranking URLs.
-    lookupReferringDomains(
-      client,
-      organic.flatMap((result) => (result.url ? [result.url] : [])),
-    ),
+    // Step 6a: referring domains for each ranking page and its whole site,
+    // plus our own site, in one request.
+    lookupReferringDomains(client, lookupTargets),
   ]);
 
-  const referringDomainsFor = (url: string | null): number | null => {
+  const pageReferringDomains = (url: string | null): number | null => {
     if (!url || !authority.counts) return null;
+    const target = stripTrackingParams(url);
     return (
-      authority.counts.get(url) ??
-      authority.counts.get(url.endsWith("/") ? url.slice(0, -1) : `${url}/`) ??
+      authority.counts.get(target) ??
+      authority.counts.get(
+        target.endsWith("/") ? target.slice(0, -1) : `${target}/`,
+      ) ??
       null
     );
   };
+  const siteReferringDomains = (domain: string | null): number | null =>
+    domain && authority.counts
+      ? (authority.counts.get(siteTarget(domain)) ?? null)
+      : null;
   const organicWithAuthority = organic.map((result) => ({
     ...result,
-    referringDomains: referringDomainsFor(result.url),
+    siteReferringDomains: siteReferringDomains(result.domain),
+    pageReferringDomains: pageReferringDomains(result.url),
   }));
   const competitors = competitorReads.map((competitor) => ({
     ...competitor,
-    referringDomains: referringDomainsFor(competitor.url),
+    siteReferringDomains: siteReferringDomains(competitor.domain),
+    pageReferringDomains: pageReferringDomains(competitor.url),
   }));
 
-  // Step 6b: win check, computed in code.
-  const referringDomains = competitors
-    .map((competitor) => competitor.referringDomains)
-    .filter((value): value is number => value !== null);
+  // Step 6b: win check, computed in code. Whole-site figures are the main
+  // measure; page-level counts are often incomplete for deep URLs.
+  const siteCounts = present(competitors.map((c) => c.siteReferringDomains));
+  const pageCounts = present(competitors.map((c) => c.pageReferringDomains));
 
   const notes = [...ourPage.notes];
   if (authority.unavailableReason !== null) {
@@ -268,7 +332,8 @@ async function getBenchmark(input: {
       position: competitor.position,
       domain: competitor.domain,
       url: competitor.url,
-      referringDomains: competitor.referringDomains,
+      siteReferringDomains: competitor.siteReferringDomains,
+      pageReferringDomains: competitor.pageReferringDomains,
       outline: competitor.outline,
       unreadableReason: competitor.unreadableReason,
     })),
@@ -276,14 +341,17 @@ async function getBenchmark(input: {
     winCheck: {
       available: authority.counts !== null,
       unavailableReason: authority.unavailableReason,
-      competitorsWithData: referringDomains.length,
-      medianReferringDomains: median(referringDomains),
-      minReferringDomains: referringDomains.length
-        ? Math.min(...referringDomains)
-        : null,
-      maxReferringDomains: referringDomains.length
-        ? Math.max(...referringDomains)
-        : null,
+      competitorsWithData: siteCounts.length,
+      medianReferringDomains: median(siteCounts),
+      minReferringDomains: siteCounts.length ? Math.min(...siteCounts) : null,
+      maxReferringDomains: siteCounts.length ? Math.max(...siteCounts) : null,
+      ourSiteReferringDomains: ours ? siteReferringDomains(ours) : null,
+      pageLevel: {
+        competitorsWithData: pageCounts.length,
+        median: median(pageCounts),
+        min: pageCounts.length ? Math.min(...pageCounts) : null,
+        max: pageCounts.length ? Math.max(...pageCounts) : null,
+      },
     },
     notes,
   };
