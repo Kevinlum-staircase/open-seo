@@ -22,6 +22,7 @@ import {
 } from "@/server/lib/dataforseo/business";
 import {
   fetchBacklinksHistory,
+  fetchBulkReferringDomains,
   fetchBacklinksRows,
   fetchBacklinksSummary,
   fetchDomainPagesSummary,
@@ -102,6 +103,7 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
       summary: meter(customer, fetchBacklinksSummary),
       rows: meter(customer, fetchBacklinksRows),
       referringDomains: meter(customer, fetchReferringDomains),
+      bulkReferringDomains: meter(customer, fetchBulkReferringDomains),
       domainPages: meter(customer, fetchDomainPagesSummary),
       history: meter(customer, fetchBacklinksHistory),
     },

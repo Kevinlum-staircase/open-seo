@@ -43,18 +43,18 @@ A new tool in `src/server/mcp/tools/`, following the pattern of `get_serp_result
 
 **Steps**
 
-1. **Live results.** One `serp.live` call at depth 10 in the resolved market. Keep the organic items (with `backlinks_info`) and the `people_also_ask` questions, and note which SERP features appear.
+1. **Live results.** One `serp.live` call at depth 10 in the resolved market. Keep the organic items and the `people_also_ask` questions, and note which SERP features appear.
 2. **Our position.** If the project's domain appears in the organic results, record its position and URL. Leave our own domain out of the competitor list.
 3. **Read the top pages.** Fetch the top `competitorCount` organic URLs through the existing SSRF-safe fetch in `src/server/lib/scrape.ts`, exporting a small `fetchPageHtml(url)` there rather than duplicating the redirect and private-IP protection. A page that fails (blocked, timed out, empty) is marked "couldn't read" and the rest continue.
 4. **Break each page down.** A new extractor built on `htmlparser2` (already installed) returns the title, meta description, H1, the H2 and H3 texts in order, word count, structured data types present (FAQ, HowTo, Article and so on), image count, and body text trimmed to a fixed budget per page. The audit's `analyzeHtml` is not reused: it keeps heading levels but not heading text, and changing it risks the audit engine's memory limits.
 5. **Break the draft down.** Run the same extractor on `draft` (Plain text and Markdown are first converted to simple HTML so headings are recognised) or on the fetched `ownUrl` page.
-6. **Win check, computed in code.** The median, minimum and maximum referring domains across the competitor pages, plus each page's own count.
+6. **Win check, computed in code.** One DataForSEO Backlinks bulk referring-domains request covers the ranking pages, using each URL exactly as the results list it (www and full path kept), so the counts are page-level, not whole-site. The win check reports the median, minimum and maximum referring domains across the competitor pages, plus each page's own count. Live SERP results carry no backlink data, which is why this is a separate request. If the Backlinks API isn't available on the account or the call fails, the rest of the output is unaffected and the win check is marked "authority data unavailable" with the reason.
 
 **Output**
 
 The keyword and market used, the top 10 organic results (position, domain, URL, title, referring domains, backlinks), the People Also Ask questions, the SERP features present, our position and URL if we rank, the competitor outlines (or "couldn't read" with a reason), the draft outline, and the win-check numbers. It also returns a short text table in the style of the other tools.
 
-**Cost:** one DataForSEO SERP request per call. Page fetching is free.
+**Cost:** one DataForSEO SERP request plus one small Backlinks bulk referring-domains request per call (which needs Backlinks API access on the account). Page fetching is free.
 
 ### Claude side: the Draft Stress Test skill
 

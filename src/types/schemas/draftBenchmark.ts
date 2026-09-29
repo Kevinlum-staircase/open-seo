@@ -52,7 +52,6 @@ const organicResultSchema = z.looseObject({
   url: z.string().nullable(),
   title: z.string().nullable(),
   referringDomains: z.number().nullable(),
-  backlinks: z.number().nullable(),
   isOurs: z.boolean(),
 });
 
@@ -90,12 +89,17 @@ export const draftBenchmarkOutputSchema = z.looseObject({
     .nullable(),
   winCheck: z
     .looseObject({
+      /** False when the referring-domain lookup failed; see unavailableReason. */
+      available: z.boolean(),
+      unavailableReason: z.string().nullable(),
       competitorsWithData: z.number(),
       medianReferringDomains: z.number().nullable(),
       minReferringDomains: z.number().nullable(),
       maxReferringDomains: z.number().nullable(),
     })
-    .describe("Referring domains across the competitor pages that were read."),
+    .describe(
+      "Page-level referring domains across the competitor pages that were read, from DataForSEO's Backlinks API.",
+    ),
   /** Plain-language caveats, e.g. a trimmed draft or unreadable pages. */
   notes: z.array(z.string()),
 });

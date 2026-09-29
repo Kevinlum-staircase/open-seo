@@ -81,6 +81,41 @@ function extractPeopleAlsoAsk(items: SerpLiveItem[]): string[] {
   return [...new Set(questions)];
 }
 
+/**
+ * Page-level referring domains for the ranking URLs, in one Backlinks API
+ * request. Never throws: if the API isn't available on the account or the call
+ * fails, the rest of the benchmark still returns and the win check says why.
+ */
+async function lookupReferringDomains(
+  client: ReturnType<typeof createDataforseoClient>,
+  urls: string[],
+): Promise<
+  | { counts: Map<string, number | null>; unavailableReason: null }
+  | { counts: null; unavailableReason: string }
+> {
+  if (urls.length === 0) {
+    return { counts: null, unavailableReason: "no ranking pages to look up" };
+  }
+  try {
+    // Targets go through exactly as the SERP reported them (www and full path).
+    const items = await client.backlinks.bulkReferringDomains({
+      targets: urls,
+    });
+    return {
+      counts: new Map(
+        items.map((item) => [item.target, item.referring_domains ?? null]),
+      ),
+      unavailableReason: null,
+    };
+  } catch (error) {
+    return {
+      counts: null,
+      unavailableReason:
+        error instanceof Error ? error.message : "the lookup failed",
+    };
+  }
+}
+
 async function outlineOurPage(input: {
   draft?: string;
   ownUrl?: string;
@@ -148,8 +183,6 @@ async function getBenchmark(input: {
       domain: item.domain ?? null,
       url: item.url ?? null,
       title: item.title ?? null,
-      referringDomains: item.backlinks_info?.referring_domains ?? null,
-      backlinks: item.backlinks_info?.backlinks ?? null,
       isOurs: isOurDomain(item.domain, ours),
     }))
     .slice(0, SERP_DEPTH);
@@ -165,26 +198,52 @@ async function getBenchmark(input: {
         !result.isOurs && result.url !== null,
     )
     .slice(0, competitorCount);
-  const [competitors, ourPage] = await Promise.all([
+  const [competitorReads, ourPage, authority] = await Promise.all([
     Promise.all(
       competitorResults.map(async (result) => ({
         position: result.position,
         domain: result.domain,
         url: result.url,
-        referringDomains: result.referringDomains,
         ...(await readPageOutline(result.url)),
       })),
     ),
     // Step 5: break our draft (or live page) down the same way.
     outlineOurPage(input),
+    // Step 6a: page-level referring domains for the exact ranking URLs.
+    lookupReferringDomains(
+      client,
+      organic.flatMap((result) => (result.url ? [result.url] : [])),
+    ),
   ]);
 
-  // Step 6: win check, computed in code.
+  const referringDomainsFor = (url: string | null): number | null => {
+    if (!url || !authority.counts) return null;
+    return (
+      authority.counts.get(url) ??
+      authority.counts.get(url.endsWith("/") ? url.slice(0, -1) : `${url}/`) ??
+      null
+    );
+  };
+  const organicWithAuthority = organic.map((result) => ({
+    ...result,
+    referringDomains: referringDomainsFor(result.url),
+  }));
+  const competitors = competitorReads.map((competitor) => ({
+    ...competitor,
+    referringDomains: referringDomainsFor(competitor.url),
+  }));
+
+  // Step 6b: win check, computed in code.
   const referringDomains = competitors
     .map((competitor) => competitor.referringDomains)
     .filter((value): value is number => value !== null);
 
   const notes = [...ourPage.notes];
+  if (authority.unavailableReason !== null) {
+    notes.push(
+      `Authority data unavailable (${authority.unavailableReason}), so the win check can't compare backlinks. Everything else is unaffected.`,
+    );
+  }
   const unread = competitors.filter((competitor) => !competitor.outline);
   if (unread.length > 0) {
     notes.push(
@@ -199,7 +258,7 @@ async function getBenchmark(input: {
     keyword: input.keyword,
     locationCode: input.locationCode,
     languageCode: input.languageCode,
-    organicResults: organic,
+    organicResults: organicWithAuthority,
     peopleAlsoAsk: extractPeopleAlsoAsk(items),
     serpFeatures: [...new Set(items.map((item) => item.type).filter(Boolean))],
     ourPosition: ourResult
@@ -215,6 +274,8 @@ async function getBenchmark(input: {
     })),
     draft: ourPage.page,
     winCheck: {
+      available: authority.counts !== null,
+      unavailableReason: authority.unavailableReason,
       competitorsWithData: referringDomains.length,
       medianReferringDomains: median(referringDomains),
       minReferringDomains: referringDomains.length

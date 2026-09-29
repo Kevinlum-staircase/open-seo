@@ -32,7 +32,6 @@ const RESULT_COLUMNS: McpTableColumn<OrganicResult>[] = [
   { header: "domain", value: (r) => r.domain },
   { header: "title", value: (r) => r.title, format: truncatedCell(70) },
   { header: "ref domains", value: (r) => r.referringDomains },
-  { header: "backlinks", value: (r) => r.backlinks },
   { header: "ours", value: (r) => r.isOurs },
 ];
 
@@ -59,7 +58,9 @@ function buildText(result: DraftBenchmark): string {
       : "Our domain is not in the top 10.",
     `Top ${result.organicResults.length} organic results:\n${formatMcpTable(result.organicResults, RESULT_COLUMNS)}`,
     `Competitor pages read (${result.competitors.length}, our domain excluded):\n${formatMcpTable(result.competitors, COMPETITOR_COLUMNS)}`,
-    `Win check, referring domains across ${result.winCheck.competitorsWithData} competitors: median ${result.winCheck.medianReferringDomains ?? "—"}, min ${result.winCheck.minReferringDomains ?? "—"}, max ${result.winCheck.maxReferringDomains ?? "—"}`,
+    result.winCheck.available
+      ? `Win check, page-level referring domains across ${result.winCheck.competitorsWithData} competitors: median ${result.winCheck.medianReferringDomains ?? "—"}, min ${result.winCheck.minReferringDomains ?? "—"}, max ${result.winCheck.maxReferringDomains ?? "—"}`
+      : `Win check: authority data unavailable (${result.winCheck.unavailableReason ?? "unknown reason"})`,
     `People Also Ask: ${result.peopleAlsoAsk.join(" | ") || "none"}`,
     `SERP features: ${result.serpFeatures.join(", ") || "none"}`,
   ];
@@ -83,7 +84,7 @@ export const getDraftBenchmarkTool = {
   config: {
     title: "Get draft benchmark",
     description:
-      "Gather the evidence to stress test a draft (or one of our live pages) against the top Google results for a keyword. Fetches the live top 10 organic results in the project's market with referring domains, People Also Ask questions and SERP features; reads the top pages (default 5, max 8) and breaks each into title, meta description, H1, H2/H3 headings, word count, structured data types, image count and a body excerpt; and breaks the draft down the same way. Our own domain is excluded from the competitor list (its position is reported separately). Pages that can't be read are marked with a reason and the rest continue. Pass `draft` (HTML, Markdown or plain text; trimmed to 60,000 characters with a note) or `ownUrl` (an existing page of ours). If both are given, `ownUrl` wins and `draft` is ignored. This tool only gathers evidence: you judge the draft. Costs one DataForSEO SERP request per call; page fetching is free. Does not save anything.",
+      "Gather the evidence to stress test a draft (or one of our live pages) against the top Google results for a keyword. Fetches the live top 10 organic results in the project's market with page-level referring domains (Backlinks API), People Also Ask questions and SERP features; reads the top pages (default 5, max 8) and breaks each into title, meta description, H1, H2/H3 headings, word count, structured data types, image count and a body excerpt; and breaks the draft down the same way. Our own domain is excluded from the competitor list (its position is reported separately). Pages that can't be read are marked with a reason and the rest continue. Pass `draft` (HTML, Markdown or plain text; trimmed to 60,000 characters with a note) or `ownUrl` (an existing page of ours). If both are given, `ownUrl` wins and `draft` is ignored. This tool only gathers evidence: you judge the draft. If the Backlinks API isn't available or fails, everything else still returns and the win check is marked \"authority data unavailable\" with the reason. Costs one DataForSEO SERP request plus one small Backlinks bulk referring-domains request per call; page fetching is free. Does not save anything.",
     inputSchema,
     outputSchema: draftBenchmarkOutputSchema.extend(optionalMetaOutputSchema),
     annotations: {
