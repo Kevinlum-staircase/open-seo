@@ -87,6 +87,21 @@ async function fetchText(url: string): Promise<string | null> {
 }
 
 /**
+ * Fetches one page's raw HTML behind the same SSRF guard as readPages
+ * (host/private-IP validation plus re-validated redirects). Returns null when
+ * the URL is blocked or the page can't be fetched.
+ */
+export async function fetchPageHtml(rawUrl: string): Promise<string | null> {
+  let url: string;
+  try {
+    url = await normalizeAndValidateStartUrl(rawUrl);
+  } catch {
+    return null;
+  }
+  return fetchText(url);
+}
+
+/**
  * Pulls page URLs from a sitemap body. Resolves relative/protocol-relative
  * <loc> entries against the origin and keeps same-origin HTML pages only. Nested
  * sitemap files (a sitemap index) are skipped rather than fetched as pages —
