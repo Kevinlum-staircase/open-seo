@@ -276,6 +276,34 @@ export async function fetchReferringDomains(input: BacklinksListRequest) {
   };
 }
 
+const bulkReferringDomainsItemSchema = z
+  .object({
+    target: z.string(),
+    referring_domains: z.number().nullable().optional(),
+  })
+  .passthrough();
+
+/**
+ * Referring-domain counts for up to 1,000 targets in one request. Page URLs
+ * (absolute, with scheme) are counted at page level, so pass them exactly as
+ * they appear in the SERP rather than reducing them to the domain.
+ */
+export async function fetchBulkReferringDomains(input: { targets: string[] }) {
+  const path = "/v3/backlinks/bulk_referring_domains/live";
+  const response = await dataforseoPost(path, [{ targets: input.targets }], {
+    classify: classifyBacklinksError,
+  });
+  const task = assertOk(response, assertOptions(path));
+  return {
+    data: parseTaskItems(
+      "bulk-referring-domains-live",
+      task,
+      bulkReferringDomainsItemSchema,
+    ),
+    billing: buildTaskBilling(task),
+  };
+}
+
 export async function fetchDomainPagesSummary(input: BacklinksListRequest) {
   const filters =
     input.filters && input.filters.length > 0 ? input.filters : undefined;
