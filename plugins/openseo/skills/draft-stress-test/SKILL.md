@@ -117,7 +117,7 @@ Saved report (through `seo-report`), `h1`: `Draft test: <keyword> (<date>)`. Sec
 4. **Trust and compliance.** Every placeholder, missing credential, missing date, unsourced figure and advice-like or guaranteed-outcome statement, quoted from the draft, plus the compliance recommendation.
 5. **Questions to answer.** The People Also Ask questions, marked answered or not answered by the draft.
 6. **What to do next.** All the changes in priority order.
-7. **How this report was made.** Opens with the skill link line from `seo-report`, pointing at `https://openseo.so/docs/skills/draft-stress-test` ("OpenSEO Draft Stress Test skill"), then which tools reported what, which pages could not be read, and what you judged yourself (for example the institutional versus rival grouping).
+7. **How this report was made.** Opens with one plain sentence naming the "Staircase Draft Stress Test skill", the agent that ran it and the date, with no link (this is a custom skill with no docs page, so do not use the linked line from `seo-report`), then which tools reported what, which pages could not be read, and what you judged yourself (for example the institutional versus rival grouping).
 
 ## After the report
 
