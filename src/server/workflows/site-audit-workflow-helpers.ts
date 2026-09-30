@@ -1,6 +1,7 @@
 import type { CrawledPageResult } from "@/server/lib/audit/types";
 import type { PageFetchClass } from "@/shared/audit-fetch-class";
 import { sha256Hex } from "@/server/lib/audit/ids";
+import { readHtmlWithoutBulk } from "@/server/lib/audit/read-html-without-bulk";
 import { normalizeUrl } from "@/server/lib/audit/url-utils";
 import type { CrawlThrottle } from "@/server/lib/audit/crawl-throttle";
 
@@ -140,14 +141,14 @@ export async function crawlPage(
 
     const contentType = response.headers.get("content-type") ?? "";
     const isHtml = contentType.includes("text/html");
-    // Cap what we read: the first 1 MiB still contains the SEO metadata and
-    // navigation needed by the audit in normal documents.
-    const body = isHtml ? await readTextUpTo(response, MAX_HTML_BYTES) : "";
-    const fetchClass = classifyFetch(
-      statusCode,
-      response.headers,
-      body.slice(0, 4_000),
-    );
+    // Cap what we keep: style and script contents are dropped while reading,
+    // so the first 1 MiB of kept HTML reaches the content even on heavy pages.
+    // The challenge check needs the raw start, since its markers can sit in
+    // scripts.
+    const { body, rawSnippet } = isHtml
+      ? await readHtmlWithoutBulk(response, { maxKeptChars: MAX_HTML_BYTES })
+      : { body: "", rawSnippet: "" };
+    const fetchClass = classifyFetch(statusCode, response.headers, rawSnippet);
 
     if (!isHtml || fetchClass !== "ok" || statusCode >= 400) {
       return emptyPageResult({
@@ -247,38 +248,6 @@ export async function crawlPage(
       inSitemap,
     });
   }
-}
-
-async function readTextUpTo(response: Response, maxBytes: number) {
-  if (!response.body) return "";
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const parts: string[] = [];
-  let bytesRead = 0;
-
-  try {
-    while (bytesRead < maxBytes) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const remaining = maxBytes - bytesRead;
-      const chunk =
-        value.byteLength > remaining ? value.subarray(0, remaining) : value;
-      bytesRead += chunk.byteLength;
-      parts.push(decoder.decode(chunk, { stream: true }));
-
-      if (bytesRead >= maxBytes) {
-        await reader.cancel();
-        break;
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  parts.push(decoder.decode());
-  return parts.join("");
 }
 
 function emptyPageResult(input: {

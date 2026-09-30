@@ -5,6 +5,7 @@
 // gracefully (less text); a Browser Rendering upgrade can slot in behind this
 // same interface later.
 
+import { readHtmlWithoutBulk } from "@/server/lib/audit/read-html-without-bulk";
 import { normalizeAndValidateStartUrl } from "@/server/lib/audit/url-policy";
 
 const MAX_PAGES = 5;
@@ -25,26 +26,15 @@ type SiteReadResult = {
   blocked: boolean;
 };
 
-// Bounded read: accumulate up to MAX_RESPONSE_BYTES regardless of whether
-// content-length is present (chunked / CDN responses often omit it).
+// Bounded read: style and script contents are dropped while reading, so
+// MAX_RESPONSE_BYTES caps the kept HTML (heavy pages still reach their
+// content) and a page that is larger anyway returns what fits.
 async function readBoundedText(response: Response): Promise<string | null> {
-  const reader = response.body?.getReader();
-  if (!reader) return null;
-  const decoder = new TextDecoder();
-  let result = "";
-  let bytesRead = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytesRead += value.byteLength;
-    if (bytesRead > MAX_RESPONSE_BYTES) {
-      await reader.cancel();
-      return null;
-    }
-    result += decoder.decode(value, { stream: true });
-  }
-  result += decoder.decode();
-  return result;
+  if (!response.body) return null;
+  const { body } = await readHtmlWithoutBulk(response, {
+    maxKeptChars: MAX_RESPONSE_BYTES,
+  });
+  return body;
 }
 
 async function fetchText(url: string): Promise<string | null> {
