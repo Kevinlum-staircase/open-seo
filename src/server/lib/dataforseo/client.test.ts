@@ -86,6 +86,7 @@ vi.mock("@/server/lib/dataforseo/backlinks", () => ({
   fetchBacklinksSummary: vi.fn(),
   fetchBacklinksRows: vi.fn(),
   fetchReferringDomains: vi.fn(),
+  fetchBulkReferringDomains: vi.fn(),
   fetchDomainPagesSummary: vi.fn(),
   fetchBacklinksHistory: vi.fn(),
 }));

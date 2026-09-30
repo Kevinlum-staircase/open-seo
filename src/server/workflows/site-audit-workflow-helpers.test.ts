@@ -248,6 +248,28 @@ describe("crawlPage", () => {
     expect(page?.htmlBytes).toBeGreaterThan(0);
   });
 
+  it("finds the content of a page whose inline CSS is larger than the read cap", async () => {
+    const html =
+      `<html><head><title>Heavy</title><style>${"x".repeat(1_500_000)}</style></head>` +
+      `<body><h1>One</h1><h2>A</h2><h2>B</h2>` +
+      `<img src="/1.png" alt="1"><img src="/2.png" alt="2"><img src="/3.png" alt="3">` +
+      `</body></html>`;
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(html, { headers: { "content-type": "text/html" } }),
+        ),
+    );
+
+    const page = await crawl();
+
+    expect(page).toMatchObject({ h1Count: 1, h2Count: 2, imagesTotal: 3 });
+    // htmlBytes is what we hold in memory, so the crawl window budgets on it.
+    expect(page?.htmlBytes).toBeLessThan(10_000);
+  });
+
   it("does not retain large source HTML in queued crawl results", () => {
     // A dedicated V8 process makes GC available without depending on the test
     // runner's heap. Exercise the real reader/parser with separate streamed
