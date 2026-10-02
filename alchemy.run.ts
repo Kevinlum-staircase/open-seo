@@ -313,6 +313,25 @@ export default Alchemy.Stack(
     const authMode = yield* Config.string("AUTH_MODE").pipe(
       Config.withDefault("cloudflare_access"),
     );
+    // Opt-in CPU limit for self-host deploys on the Workers Paid plan. Unset
+    // keeps the plan default, which the free plan requires.
+    const selfHostCpuMs = yield* optionalVar("SELFHOST_CPU_MS");
+    if (
+      selfHostCpuMs !== "" &&
+      !(/^[1-9]\d*$/.test(selfHostCpuMs) && Number(selfHostCpuMs) <= 300_000)
+    ) {
+      return yield* Effect.die(
+        new Error(
+          "SELFHOST_CPU_MS must be a whole number from 1 to 300000 (milliseconds).",
+        ),
+      );
+    }
+    const cpuLimits =
+      authMode !== "cloudflare_access"
+        ? { limits: { cpuMs: 300_000 } }
+        : selfHostCpuMs === ""
+          ? {}
+          : { limits: { cpuMs: Number(selfHostCpuMs) } };
     const databaseProvider = yield* optionalVar("DATABASE_PROVIDER");
     const workersSubdomain = yield* readWorkersSubdomain({ required: false });
 
@@ -381,10 +400,9 @@ export default Alchemy.Stack(
       // Audit workflow steps parse and persist batches of HTML — the same
       // CPU allowance the app worker used to carry for them. Configurable
       // CPU limits are a paid-plan feature; self-host deploys
-      // (cloudflare_access) may run on the free plan, which rejects them.
-      ...(authMode === "cloudflare_access"
-        ? {}
-        : { limits: { cpuMs: 300_000 } }),
+      // (cloudflare_access) may run on the free plan, which rejects them, so
+      // they only get one when SELFHOST_CPU_MS is set.
+      ...cpuLimits,
       observability: {
         enabled: wrangler.observability?.enabled ?? true,
         traces: { enabled: wrangler.observability?.traces?.enabled ?? false },
@@ -442,10 +460,8 @@ export default Alchemy.Stack(
       // workflow's per-tick CPU is measured or it moves too. Configurable CPU
       // limits are a paid-plan feature, and self-host deploys
       // (cloudflare_access) may run on the free plan — which rejects them —
-      // so those get the plan default instead.
-      ...(authMode === "cloudflare_access"
-        ? {}
-        : { limits: { cpuMs: 300_000 } }),
+      // so those get the plan default unless SELFHOST_CPU_MS is set.
+      ...cpuLimits,
       observability: {
         enabled: wrangler.observability?.enabled ?? true,
         traces: { enabled: wrangler.observability?.traces?.enabled ?? false },
