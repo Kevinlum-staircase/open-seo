@@ -2,128 +2,78 @@
 
 ## Status
 
-Proposed. Custom feature for the Staircase fork of OpenSEO. Depends on the engine from `specs/0015-draft-stress-test.md` (live page mode).
+Revised October 2026. Custom feature for the Staircase fork of OpenSEO.
 
-**Note (revised 0015):** the Draft Stress Test now splits into an evidence service in OpenSEO (`DraftBenchmarkService`, with live page mode via `ownUrl`) and judging done by Claude through a skill. This spec still assumes the old single engine that also did the AI comparison. Revise it before building, most likely so the Gap Plan also runs from Claude using `get_draft_benchmark`.
+This replaces the earlier in-app design (a Gap Plan page backed by a `GapPlanWorkflow` and its own AI calls). That design pre-dated the revised Draft Stress Test (`specs/0015-draft-stress-test.md`), which split into an evidence tool in OpenSEO (`get_draft_benchmark`) and judging done by Claude through a skill. The Gap Plan now follows the same pattern: Claude runs it through the OpenSEO connector, using tools that already exist plus one small option on `get_draft_benchmark`.
 
 ## What it does
 
-- A new project page, **Gap Plan**, produces one prioritised action plan answering: "For the keywords we care about, where do we stand against competitors, why are they ahead, and what exactly do we do about it?"
-- It combines four things OpenSEO already has but keeps on separate pages: our target keywords and current positions (Rank Tracking), our saved competitors (Project Context), the technical health of our pages (Site Audit), and the live Google results for each keyword. Then it adds the new part: a content comparison of our ranking page against the pages beating it.
-- Every keyword ends up in exactly one bucket (the exact rules are under "Bucket rules" below), and the plan is ordered by bucket:
-  1. **Quick win**: we rank 4 to 20 with a page that matches the search intent, and the gap is content or on-page issues we can fix.
-  2. **Page needed**: nothing of ours ranks within the tracked depth. The plan says what the page must cover and links to Draft Test with the keyword pre-filled.
-  3. **Wrong page ranking**: Google ranks a page of ours that doesn't match the search intent (for example the homepage for a specific calculator search). The plan recommends which page should own the keyword.
-  4. **Authority-limited**: our content is competitive, but our page has far fewer referring domains than the pages ranking above it. The plan says content changes alone are unlikely to move us, and points to link building.
-  5. **Major rework**: the right page exists but ranks below 20 and its content is behind. It needs a substantial rewrite, not tweaks. The plan links to Draft Test so the rewrite can be tested before it goes live.
-  6. **Holding**: we rank in the top 3. The plan lists only threats (competitors gaining).
-- The plan is saved as an OpenSEO Report, like the Draft Test, so it can be printed or shared with the team.
+- Someone asks Claude for a gap plan for the project. Claude, following the **Gap Plan skill** (`plugins/openseo/skills/gap-plan/SKILL.md`), answers: "For the keywords we track, where do we stand against competitors, why are they ahead, and what exactly do we do about it?"
+- Every tracked keyword lands in exactly one bucket, in this order: Page needed, Holding, Wrong page ranking, Authority-limited, Quick win, Major rework. The rules are in the skill and are applied in order, first match wins.
+- The plan leads with the three to five actions most likely to move traffic this month, and is saved as an OpenSEO report (`skill: "gap-plan"`), like the Draft Stress Test.
 
-## What each keyword is benchmarked against
+## Inputs (set up once in the app, reused every run)
 
-There is no single score. Each keyword is judged against the live Google results for that keyword in the project's market at the time of the run, so the benchmark moves as the results change.
-
-- **Content** (intent, coverage, depth, unique value, trust signals, on-page basics) is compared with the top 5 organic results, excluding our own page. Saved competitors are only part of this comparison if they're in the top 5.
-- **Unanswered questions** are checked against the keyword's "People Also Ask" results.
-- **Authority** compares our page's referring domains with the median of the top 5.
-- **Position** compares our rank with each saved competitor's rank.
-- **Technical health** uses Site Audit's fixed rules, which don't depend on competitors.
-
-## Inputs (set up once, reused every run)
-
-- **Target keywords**: the keywords already added to Rank Tracking for the project. The Gap Plan does not keep its own keyword list, so there is one list to maintain.
+- **Target keywords**: the keywords in Rank Tracking. The Gap Plan keeps no list of its own. Rank Tracking's location must be the project's market (New Zealand for Staircase).
 - **Competitors**: the competitors saved in Project Context.
-- **Market and depth**: the project's market, and Rank Tracking's configured depth (how many results it checks). Rank Tracking's location must be set to New Zealand.
-- **Latest Site Audit**: optional. If one exists, the plan attaches each page's audit issues to its keywords. If none exists, the plan says so and skips technical findings rather than starting a crawl.
+- **Latest Site Audit**: optional. Used if it is under 30 days old; the skill never starts a crawl.
+- **Search Console**: optional but recommended. Free first-party data used to prioritise and to spot the wrong page ranking.
 
 ## How it works
 
-The run is long (several keywords, each with a live results lookup, page fetches and an AI call), so it runs as a background Cloudflare Workflow, `GapPlanWorkflow`, following the pattern of `SiteAuditWorkflow` and `RankCheckWorkflow`. The page starts a run, shows progress, and displays the result when the run finishes.
+All in the skill, using existing MCP tools:
 
-**Step 1: gather.** Load the target keywords, the Rank Tracking config (market and depth), the latest rank snapshot for each keyword, the saved competitors and the latest audit's pages and issues.
+1. **Setup check** (free): `get_project_context`, `get_rank_tracker`. Stop with a clear fix if there is no tracker, no keywords, the wrong location, or stale positions.
+2. **Free data**: `list_site_audits` and `get_audit_issues` for issues on our ranking URLs; `get_search_console_performance` by query and page for clicks, impressions and competing pages of ours.
+3. **Confirm the spend**: Claude tells the user how many paid benchmark calls it will make and waits for a yes.
+4. **Per keyword** (paid): one `get_draft_benchmark` call with `detail: "summary"`, passing `ownUrl` set to the rank tracker's ranking URL, or nothing when we do not rank. Holding keywords (positions 1 to 3, not slipping) are not benchmarked. Claude groups the ranking sites into institutional and realistic rivals, rates our page on the Draft Stress Test's six areas, works out the authority ratio, and applies the bucket rules.
+5. **Competitor summary**, **prioritisation** and the **report**, through `seo-report`.
 
-**Step 2: per keyword** (one durable workflow step each, so a failure on one keyword doesn't lose the others):
+### Authority ratio
 
-- **Get the live results in one lookup, stopping at our domain.** Call `fetchLiveSerp` with a new optional `stopAtDomain` set to our domain, and the maximum depth set to Rank Tracking's configured depth. This uses the existing `stopCrawlOnTarget` option that rank checks already use: DataForSEO fetches results 10 at a time and stops once our domain appears, so if we rank 14th we pay for two pages of results, not ten. The first page (which holds the top 5) is always included. The same lookup gives our position, our ranking URL, our page's referring domains, every competitor's position within the fetched results, and the People Also Ask questions.
-- **Where lookups and Rank Tracking disagree**, the live lookup wins, and the plan notes the difference.
-- **Candidate page**: our organic result from the lookup, if there is one.
-- **Content comparison**: if there is a candidate page, run the Draft Test engine in live page mode, passing in the results from this lookup so the keyword isn't looked up (and paid for) twice.
-- **Audit issues**: attach the candidate page's Site Audit issues, if an audit exists.
-- **Authority ratio**: computed in code, as described under "Bucket rules".
-- **Bucket**: assigned in code by the rules below.
+Our site's whole-site referring domains divided by the median whole-site figure of the realistic rivals in the top 5. This settles the earlier "like with like" question: `get_draft_benchmark` reports whole-site and page-level counts, and the Draft Stress Test found page-level counts too often incomplete to rely on, so both sides use whole-site counts. The ratio is "unknown" when either figure is missing.
 
-**Step 3: competitor summary.** For each saved competitor, count how many of our target keywords they beat us on and list the ones where they rank and we don't at all. Report which competitor pages win most often, since those are the pages to study. Positions come from the step 2 lookups, so a competitor ranking below the point where the lookup stopped counts as "below us".
+## Code changes
 
-**Step 4: write the plan.** One final AI call turns the per-keyword results into a short executive summary: the three to five actions most likely to move traffic this month, in plain English. Then build the report HTML and save it with `ReportService.saveReport` (`skill: "gap-plan"`, title `Gap plan: <project> (<date>)`).
+Small, and only to our own Draft Stress Test files:
 
-## Bucket rules
+- `src/types/schemas/draftBenchmark.ts`: a new optional input `detail`, `"full"` (default) or `"summary"`.
+- `src/server/features/draft-test/services/DraftBenchmarkService.ts`: in summary mode, outline competitor pages and our `ownUrl` page with no body text (`extractPageOutline(html, 0)`). Everything else is unchanged.
+- `src/server/mcp/tools/get-draft-benchmark.ts`: pass `detail` through, and mention it in the tool description ("summary leaves out page body text, for runs over many keywords such as the Gap Plan").
+- `plugins/openseo/skills/gap-plan/SKILL.md`: the skill.
 
-The rules are applied in order, and the first match wins. The AI judges content and intent; code applies the rules, so a keyword's bucket is predictable and explainable run over run.
+Why the summary mode: a full benchmark returns up to six body excerpts of about 6,000 characters each. Across 30 keywords that is around a million characters, more than a Claude conversation can hold. Without body text, each call is a small fraction of that, and the headings, word counts and structured data that the Gap Plan judges on are all kept.
 
-| Order | Bucket | Rule |
-|---|---|---|
-| 1 | Page needed | We have no organic result within the tracked depth. |
-| 2 | Holding | Our position is 1 to 3. |
-| 3 | Wrong page ranking | The engine's intent verdict for our page is "behind". |
-| 4 | Authority-limited | Content is competitive (definition below) and the authority ratio is below 0.25. |
-| 5 | Quick win | Our position is 4 to 20. |
-| 6 | Major rework | Everything else: the right page, ranking 21 or lower. |
-
-Definitions:
-
-- **Content is competitive** when the engine rates no more than one of its six areas as "behind", and that one area is not intent.
-- **Authority ratio** is our page's referring domains divided by the median referring domains of the top 5 organic results (excluding our own page). A ratio of 0.25 means we have a quarter of the typical backlinking domains.
-- **Missing data**: if our page's referring domains aren't reported, or the top-5 median is zero, the ratio is "unknown". Rule 4 is skipped for that keyword and the plan says the authority check couldn't be run.
-- **Like with like**: during the build, confirm whether the SERP data reports referring domains for the ranking page or for its whole site, and compare the same level on both sides. Label the report accordingly.
-
-All thresholds (the 1–3 holding range, the 20 quick-win cut-off, the 0.25 authority ratio, the one-area allowance, top 5 as the benchmark set, the 30-keyword cap) live as named constants in one file, `gapPlanThresholds.ts`, with a comment explaining each. They are starting points, meant to be tuned after the first few runs on real data.
-
-## Where the code goes
-
-New files:
-
-- `src/routes/_project/p/$projectId/gap-plan.tsx`: the page route.
-- `src/client/features/gap-plan/`: start button, progress, results and bucket views.
-- `src/serverFunctions/gapPlan.ts`: start a run and poll its status.
-- `src/server/features/gap-plan/services/GapPlanService.ts`: steps 1, 3 and 4.
-- `src/server/features/gap-plan/services/gapPlanBuckets.ts`: the bucket rules and authority ratio, as small pure functions.
-- `src/server/features/gap-plan/gapPlanThresholds.ts`: all thresholds in one place.
-- `src/server/features/gap-plan/services/gapPlanReportHtml.ts`: report layout.
-- `src/server/workflows/GapPlanWorkflow.ts`: the background run.
-- `src/types/schemas/gapPlan.ts`: Zod schemas.
-
-Small changes to existing files:
-
-- `src/server/lib/dataforseo/serp.ts`: an optional `stopAtDomain` on `fetchLiveSerp`, reusing the existing `stopCrawlOnTarget`. Existing callers are unaffected.
-- `src/client/navigation/items.ts`: one sidebar entry.
-- Workflow registration in `wrangler.jsonc` and the self-host deployment config, following how `RankCheckWorkflow` is registered.
-
-Run status needs somewhere to live while the workflow runs. Store it in the existing KV progress mechanism used by the audit (`progress-kv.ts`) rather than adding a database table. The finished result is the saved report.
+No new pages, database tables, workflows, environment variables or AI calls inside OpenSEO. The default for `get_draft_benchmark` stays `"full"`, so the Draft Stress Test is unaffected.
 
 ## Tests
 
-The bucket rules are the one place a quiet mistake would mislead the whole plan, so `gapPlanBuckets.ts` gets one test per rule, plus one for "unknown" authority data. Nothing else in this feature needs new tests.
+- Summary mode returns outlines with an empty `bodyText` for competitors and for an `ownUrl` page, and full mode (the default) is unchanged.
+- A call with neither `draft` nor `ownUrl` returns the live results with `draft: null` (already supported; add a test if one does not exist).
+
+The bucket rules live in the skill, not in code, so they have no unit tests. The skill states them as a fixed, ordered table to keep runs consistent.
+
+## Installing
+
+After the change is deployed, each person who runs the Gap Plan installs the skill in Claude the same way as the Draft Stress Test: zip the `gap-plan` folder and upload it in Claude's skill settings. They also need the OpenSEO connector and their email in `ACCESS_ALLOWED_EMAILS`.
 
 ## Limits and known gaps
 
-- Cost scales with the number of keywords: each keyword is one SERP lookup and one AI call per run. Keywords we rank high for are cheapest. Keywords we don't rank for at all are the most expensive, because the lookup runs to the full tracked depth. Cap a run at 30 keywords. The page shows the keyword count before starting so there are no surprises.
-- Only pages that rank within the tracked depth are treated as candidates. A page we wrote for a keyword that Google ignores entirely shows as "page needed", and the plan notes a possible existing page if its title closely matches.
-- Competitor pages that block bots or rely on JavaScript are compared partially, as in the Draft Test.
-- Competitors ranking below where the lookup stopped show as "below us", without an exact position.
-- Beating the top 5 on paper is a strong indicator, not a ranking guarantee. Google also weighs signals the tool can't see well, such as brand searches and how visitors behave after clicking. This matters most for finance topics, where large banks and government sites carry built-in trust.
+- **Cost**: one search request plus one small backlinks request per benchmarked keyword. A 30-keyword run with five Holding keywords is 25 calls. The skill always confirms before spending.
+- **Top 10 only**: `get_draft_benchmark` reads the top 10. For a keyword where we rank 14th, our position and page come from the rank tracker, and competitor positions below 10 are not known.
+- **Judging is not byte-for-byte repeatable** because Claude rates the six areas. The fixed areas, ratings and ordered bucket rules keep runs consistent.
+- **Unreadable pages**: competitor pages that block bots or rely on JavaScript are compared partially, as in the Draft Stress Test.
+- **No ranking guarantee**: beating the top 5 on paper is a strong indicator, not a promise. This matters most on finance searches, where banks and government sites carry built-in trust.
 
 ## Build phases
 
-1. **Core**: the workflow, steps 1 and 2, bucket rules with their tests, and a simple results table. No report, no competitor summary.
-2. **Plan**: competitor summary, executive summary and saved report.
-3. **Later (optional)**: keyword discovery (keywords competitors rank for that aren't on our list, using the existing ranked-keywords data), run-over-run comparison ("what changed since last month"), a monthly schedule, and an MCP tool so the Claude Code content pipeline can pick up "page needed" and "major rework" items automatically.
+1. **Now**: the `detail` option, its tests, and the skill. Test end to end on the Staircase project.
+2. **Later (optional)**: run-over-run comparison ("what changed since last month"), keyword discovery from competitors' ranked keywords, a monthly scheduled run, and moving the bucket rules into code if runs prove inconsistent.
 
 ## Alternatives considered
 
-- **Its own keyword list**: two lists to keep in sync with Rank Tracking. Rank Tracking already owns target keywords and their history.
-- **Crawl the site as part of the run**: the audit is already a robust, separate workflow. Reusing its latest result keeps runs fast and costs predictable.
-- **Let the AI assign buckets**: less predictable, harder to trust run over run. The AI judges content and intent; code applies the rules.
-- **A separate backlinks lookup for our page**: an extra charge per keyword for a number the results lookup already returns.
-- **Always fetching 100 results**: ten times the cost on keywords we rank well for, for positions the plan doesn't need.
-- **A single numeric score**: false precision. Per-area verdicts with clear rules are more honest and easier to act on.
-- **A full keyword gap table like Semrush's**: upstream explicitly chose not to build one. The discovery phase covers the useful part without the bloat.
+- **The original in-app page and workflow**: far more code (a route, client views, a workflow, progress storage, report layout and in-app AI calls through OpenRouter), and it would duplicate the judging the Draft Stress Test skill already does in Claude.
+- **A new bundled MCP tool** gathering everything per keyword: possible later, but the existing tools already return what the skill needs.
+- **Its own keyword list**: two lists to keep in sync. Rank Tracking already owns target keywords and their history.
+- **Page-level referring domains for the authority ratio**: too often incomplete for deep pages.
+- **Benchmarking Holding keywords**: spends credits on keywords we already win. They are only benchmarked when they slip.

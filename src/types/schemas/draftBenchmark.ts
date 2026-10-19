@@ -32,6 +32,12 @@ export const draftBenchmarkInputSchema = z.object({
     .describe(
       `How many top organic pages to read, default ${DEFAULT_COMPETITOR_COUNT}, maximum ${MAX_COMPETITOR_COUNT}.`,
     ),
+  detail: z
+    .enum(["full", "summary"])
+    .default("full")
+    .describe(
+      'Default "full". "summary" leaves out page body text (headings, word counts and structured data are kept), for runs over many keywords.',
+    ),
 });
 
 const pageOutlineSchema = z.looseObject({

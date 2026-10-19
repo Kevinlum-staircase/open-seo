@@ -12,8 +12,11 @@ import {
   DEFAULT_COMPETITOR_COUNT,
   MAX_DRAFT_CHARS,
   type DraftBenchmark,
+  type DraftBenchmarkInput,
   type PageOutline,
 } from "@/types/schemas/draftBenchmark";
+
+type Detail = DraftBenchmarkInput["detail"];
 
 const SERP_DEPTH = 10;
 /** Hard ceiling per page, so one slow site can't stall the whole call. */
@@ -25,7 +28,12 @@ type PageRead =
   | { outline: PageOutline; unreadableReason: null }
   | { outline: null; unreadableReason: string };
 
-async function readPageOutline(url: string): Promise<PageRead> {
+/** Summary mode skips body text; the word count still covers the full page. */
+function bodyBudget(detail: Detail): number | undefined {
+  return detail === "summary" ? 0 : undefined;
+}
+
+async function readPageOutline(url: string, detail: Detail): Promise<PageRead> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<"timeout">((resolve) => {
     timer = setTimeout(() => resolve("timeout"), PAGE_FETCH_TIMEOUT_MS);
@@ -36,7 +44,7 @@ async function readPageOutline(url: string): Promise<PageRead> {
     if (html === null) {
       return unreadable("blocked, unreachable or returned an error");
     }
-    const outline = extractPageOutline(html);
+    const outline = extractPageOutline(html, bodyBudget(detail));
     if (outline.wordCount === 0) {
       return unreadable(
         "no readable text (likely built with JavaScript or bot-blocked)",
@@ -165,11 +173,12 @@ async function lookupReferringDomains(
 async function outlineOurPage(input: {
   draft?: string;
   ownUrl?: string;
+  detail: Detail;
 }): Promise<{ page: DraftBenchmark["draft"]; notes: string[] }> {
   const notes: string[] = [];
   // ownUrl wins over draft (documented on the tool).
   if (input.ownUrl) {
-    const read = await readPageOutline(input.ownUrl);
+    const read = await readPageOutline(input.ownUrl, input.detail);
     if (read.unreadableReason) {
       notes.push(
         `Our page ${input.ownUrl} couldn't be read: ${read.unreadableReason}.`,
@@ -206,6 +215,7 @@ async function getBenchmark(input: {
   draft?: string;
   ownUrl?: string;
   competitorCount?: number;
+  detail: Detail;
 }): Promise<DraftBenchmark> {
   // A project without a domain simply has nothing to exclude.
   const ours = input.projectDomain
@@ -261,7 +271,7 @@ async function getBenchmark(input: {
         position: result.position,
         domain: result.domain,
         url: result.url,
-        ...(await readPageOutline(result.url)),
+        ...(await readPageOutline(result.url, input.detail)),
       })),
     ),
     // Step 5: break our draft (or live page) down the same way.
