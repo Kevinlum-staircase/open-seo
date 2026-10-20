@@ -3,7 +3,7 @@ import { languageCodeSchema, locationCodeSchema } from "@/server/mcp/schemas";
 
 export const MAX_DRAFT_CHARS = 60_000;
 export const DEFAULT_COMPETITOR_COUNT = 5;
-export const MAX_COMPETITOR_COUNT = 8;
+const MAX_COMPETITOR_COUNT = 8;
 
 export const draftBenchmarkInputSchema = z.object({
   keyword: z.string().min(1).describe("The target keyword to benchmark."),
