@@ -24,10 +24,12 @@ const skills = [
   "seo-report",
 ];
 
-// Wipe and rebuild so a skill removed from the list above doesn't leave a
-// stale copy behind.
-rmSync(targetDir, { recursive: true, force: true });
+// Replace only the skills listed above. Plugin-only skills that have no copy in
+// .agents/skills (draft-stress-test, gap-plan) live straight in the plugin
+// folder and must survive the sync. A skill dropped from the list needs its
+// plugin folder deleted by hand.
 for (const skill of skills) {
+  rmSync(join(targetDir, skill), { recursive: true, force: true });
   cpSync(join(sourceDir, skill), join(targetDir, skill), {
     recursive: true,
     dereference: true,
