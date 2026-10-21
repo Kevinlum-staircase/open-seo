@@ -4,6 +4,7 @@ import { createDataforseoClient } from "@/server/lib/dataforseo";
 import type { SerpLiveItem } from "@/server/lib/dataforseo/serp";
 import { normalizeDomainInput } from "@/server/lib/domainUtils";
 import { fetchPageHtml } from "@/server/lib/scrape";
+import { stripTrackingParams } from "@/server/lib/trackingParams";
 import {
   draftToHtml,
   extractPageOutline,
@@ -91,38 +92,6 @@ function extractPeopleAlsoAsk(items: SerpLiveItem[]): string[] {
     })
     .filter((title): title is string => Boolean(title));
   return [...new Set(questions)];
-}
-
-const TRACKING_PARAMS = new Set([
-  "gclid",
-  "dclid",
-  "gbraid",
-  "wbraid",
-  "fbclid",
-  "msclkid",
-  "yclid",
-  "igshid",
-  "srsltid",
-  "mc_cid",
-  "mc_eid",
-  "_ga",
-]);
-
-/** Drops tracking parameters so the lookup targets the page, not a campaign link. */
-function stripTrackingParams(rawUrl: string): string {
-  try {
-    const url = new URL(rawUrl);
-    const kept = new URLSearchParams();
-    for (const [name, value] of url.searchParams) {
-      if (!name.startsWith("utm_") && !TRACKING_PARAMS.has(name)) {
-        kept.append(name, value);
-      }
-    }
-    url.search = kept.toString();
-    return url.toString();
-  } catch {
-    return rawUrl;
-  }
 }
 
 /**

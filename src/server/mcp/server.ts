@@ -76,6 +76,7 @@ import {
   getSearchConsolePerformanceTool,
   inspectUrlsTool,
 } from "@/server/mcp/tools/search-console-tools";
+import { getAuditSearchChecksTool } from "@/server/mcp/tools/get-audit-search-checks";
 import {
   getAuditIssuesTool,
   getAuditPagesTool,
@@ -229,6 +230,7 @@ export function createOpenSeoMcpServer(authProps: McpProps) {
   register(getAuditStatusTool);
   register(getAuditIssuesTool);
   register(getAuditPagesTool);
+  register(getAuditSearchChecksTool);
   register(saveReportTool);
   register(listReportsTool);
   register(getReportTool);
