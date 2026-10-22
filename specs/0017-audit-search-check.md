@@ -17,15 +17,15 @@ The audit judges every page the same way. It has no idea which pages Google actu
 
 A new, free MCP tool, `get_audit_search_checks`, cross-checks the latest Site Audit against Search Console and Rank Tracking for a project. It returns a short list of findings, ranked by how much search demand is at stake:
 
-| Finding | Severity | Rule |
-|---|---|---|
-| `noindex-page-with-search-demand` | critical | A crawled page is not indexable (robots meta or X-Robots-Tag noindex) and either earned at least the impression threshold in Search Console or is a tracked ranking URL. |
-| `broken-page-with-search-demand` | critical | A crawled page returned 4xx or 5xx and has search demand as above. |
-| `canonical-elsewhere-with-search-demand` | warning | A crawled page's canonical points to a different URL, but Google still shows this URL to searchers. Usually means Google is ignoring the canonical, or a duplicate should be a 301 redirect instead. |
-| `redirect-with-search-demand` | info | A crawled page redirects, but Search Console still reports impressions for the old URL. Normal for a few weeks after a change; worth checking if it persists. |
-| `search-page-not-crawled` | warning | A page with search demand that the audit did not crawl (not linked, not in the sitemap, or past the page cap). The top ones get URL Inspection (below). |
-| `inspected-canonical-elsewhere` | critical | URL Inspection shows an uncrawled, in-demand page declares a canonical (`userCanonical`) different from itself. |
-| `inspected-not-indexable` | critical | URL Inspection shows an uncrawled, in-demand page is blocked from indexing (noindex, robots.txt or a fetch failure). |
+| Finding                                  | Severity | Rule                                                                                                                                                                                                 |
+| ---------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noindex-page-with-search-demand`        | critical | A crawled page is not indexable (robots meta or X-Robots-Tag noindex) and either earned at least the impression threshold in Search Console or is a tracked ranking URL.                             |
+| `broken-page-with-search-demand`         | critical | A crawled page returned 4xx or 5xx and has search demand as above.                                                                                                                                   |
+| `canonical-elsewhere-with-search-demand` | warning  | A crawled page's canonical points to a different URL, but Google still shows this URL to searchers. Usually means Google is ignoring the canonical, or a duplicate should be a 301 redirect instead. |
+| `redirect-with-search-demand`            | info     | A crawled page redirects, but Search Console still reports impressions for the old URL. Normal for a few weeks after a change; worth checking if it persists.                                        |
+| `search-page-not-crawled`                | warning  | A page with search demand that the audit did not crawl (not linked, not in the sitemap, or past the page cap). The top ones get URL Inspection (below).                                              |
+| `inspected-canonical-elsewhere`          | critical | URL Inspection shows an uncrawled, in-demand page declares a canonical (`userCanonical`) different from itself.                                                                                      |
+| `inspected-not-indexable`                | critical | URL Inspection shows an uncrawled, in-demand page is blocked from indexing (noindex, robots.txt or a fetch failure).                                                                                 |
 
 "Search demand" means: the page earned at least `minImpressions` impressions in the chosen Search Console window, or the latest rank check reports it as a ranking URL on either device.
 
