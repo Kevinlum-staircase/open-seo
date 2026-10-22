@@ -25,6 +25,7 @@ All free unless marked.
 - `get_project_context`: brand, audience, saved competitors, key pages, writing preferences and the research log.
 - `get_rank_tracker`: without `trackerId` it lists trackers; with it, each keyword's latest `position`, `previousPosition` and `rankingUrl` per device, plus the tracker's location, devices and `serpDepth`.
 - `list_site_audits`, `get_audit_pages`, `get_audit_issues`: the latest Site Audit, used to attach technical issues to our ranking pages.
+- `get_audit_search_checks`: the latest Site Audit cross-checked against Search Console and Rank Tracking, returning only problems on pages with real search demand.
 - `get_search_console_performance`: clicks, impressions and positions by query and page. First-party data, used to prioritise and to spot the wrong page or two pages competing.
 - `get_draft_benchmark` (costs credits: one search request plus one small backlinks request per call): the live top 10 for a keyword, outlines of the top pages, referring domains and People Also Ask. For the Gap Plan always pass `detail: "summary"`, which leaves out page body text so 30 keywords fit in one run. Pass `ownUrl` set to our ranking URL when we have one; pass neither `ownUrl` nor `draft` when we have no ranking page.
 - `get_keyword_metrics` (costs credits, one request for the whole list): optional, monthly search volume for "page needed" keywords.
@@ -46,7 +47,8 @@ All free unless marked.
 ### 2. Gather the free data
 
 1. **Site Audit.** Call `list_site_audits`. If the newest completed audit is under 30 days old, read its issues with `get_audit_issues` and keep only those on our ranking URLs. If there is none, or it is older, say so and skip technical findings. Never start a crawl from this skill.
-2. **Search Console.** Call `get_search_console_performance` for the last 3 months with dimensions `["query", "page"]` and `minImpressions: 10`. For each tracked keyword, note our clicks and impressions, which of our pages Google shows, and whether two or more of our pages get impressions for it. Google only returns the top 1,000 rows, so for any tracked keyword missing from them, make one more call with a `query` filter equal to that keyword.
+2. **Search check.** Call `get_audit_search_checks`. It cross-checks the latest Site Audit against Search Console and Rank Tracking, so it finds problems that matter to searchers: pages that are hidden from Google (noindex), broken, redirected or pointing to a different canonical (the page Google should treat as the main version) while still ranking or earning impressions. Without Search Console it still returns Rank Tracking-based findings. Attach each finding to the tracked keywords whose ranking page it concerns. Treat its critical findings as "fix first" items in the report, ahead of anything from `get_audit_issues`.
+3. **Search Console.** Call `get_search_console_performance` for the last 3 months with dimensions `["query", "page"]` and `minImpressions: 10`. For each tracked keyword, note our clicks and impressions, which of our pages Google shows, and whether two or more of our pages get impressions for it. Google only returns the top 1,000 rows, so for any tracked keyword missing from them, make one more call with a `query` filter equal to that keyword.
 
 ### 3. Confirm the spend
 
@@ -119,7 +121,7 @@ Report sections, in this order:
 3. **Every keyword.** One table: keyword, position (and change since the previous check), bucket, our page, one-line reason. Group the rows by bucket in the bucket order above.
 4. **By bucket.** For each non-empty bucket, a short section: what the bucket means in one sentence, then the keywords in it with their key evidence. For Page needed and Major rework, list what the page must cover (the rivals' common headings and the People Also Ask questions) and offer the Draft Stress Test once a draft exists.
 5. **Competitors.** The competitor summary as a table, plus any unsaved site to consider saving.
-6. **Technical issues on ranking pages.** Audit issues on our ranking URLs only, with the audit date. Omit if there was no recent audit, and say why.
+6. **Technical issues on ranking pages.** Audit issues on our ranking URLs only, with the audit date. Omit if there was no recent audit, and say why. Lead with any critical findings from `get_audit_search_checks`, marked "fix first".
 7. **Data gaps.** Pages that could not be read, failed calls, unknown authority ratios, mobile and desktop disagreements, and keywords left out by the 30-keyword cap.
 8. **What to do next.** The ordered steps.
 9. **How this report was made.** Open with one plain sentence naming the "Staircase Gap Plan skill", the agent that ran it and the date, with no link (this is a custom skill with no docs page, so do not use the linked line from `seo-report`). Then which tools reported what and their dates, and what you judged yourself (the site grouping and the six ratings).
