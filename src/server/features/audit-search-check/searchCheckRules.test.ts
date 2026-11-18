@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   findSearchIssues,
+  pickDefaultAudit,
   trimNotCrawled,
   type SearchCheckAuditPage,
   type SearchConsolePageRow,
@@ -290,5 +291,31 @@ describe("trimNotCrawled", () => {
       { folder: "/glossary/", count: 1, impressions: 100, clicks: 1 },
       { folder: "/", count: 1, impressions: 50, clicks: 0 },
     ]);
+  });
+});
+
+describe("pickDefaultAudit", () => {
+  const deepAudit = {
+    id: "deep",
+    startUrl:
+      "https://staircase.co.nz/property-investment-nz/how-to-buy-investment-property",
+  };
+  const wwwHomepageAudit = {
+    id: "home",
+    startUrl: "https://www.staircase.co.nz/",
+  };
+  const otherSiteHomepage = { id: "other", startUrl: "https://example.com/" };
+
+  it("prefers the newest homepage audit over a newer deep-page audit", () => {
+    const picked = pickDefaultAudit(
+      [deepAudit, otherSiteHomepage, wwwHomepageAudit],
+      "staircase.co.nz",
+    );
+    expect(picked).toEqual({ audit: wwwHomepageAudit, isHomepageAudit: true });
+  });
+
+  it("falls back to the newest audit when none started at the homepage", () => {
+    const picked = pickDefaultAudit([deepAudit], "staircase.co.nz");
+    expect(picked).toEqual({ audit: deepAudit, isHomepageAudit: false });
   });
 });

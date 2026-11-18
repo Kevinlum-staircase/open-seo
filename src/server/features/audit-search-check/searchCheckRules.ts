@@ -185,6 +185,35 @@ function lastCrawl(result: UrlInspectionResult | null): string {
   return time ? ` (Google last crawled it ${time.slice(0, 10)})` : "";
 }
 
+function bareHost(value: string): string | null {
+  try {
+    const url = new URL(value.includes("://") ? value : `https://${value}`);
+    return url.hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The audit to check when the caller names none. A small audit started from a
+ * deep page misses most of the site, so prefer the newest one started from the
+ * homepage (path "/" on the project's host) and fall back to the newest of any.
+ * `audits` must be completed audits, newest first.
+ */
+export function pickDefaultAudit<T extends { startUrl: string }>(
+  audits: T[],
+  projectDomain: string | null,
+): { audit: T; isHomepageAudit: boolean } | null {
+  const projectHost = projectDomain ? bareHost(projectDomain) : null;
+  const homepageAudit = audits.find((audit) => {
+    if (pathOf(audit.startUrl) !== "/") return false;
+    return !projectHost || bareHost(audit.startUrl) === projectHost;
+  });
+  if (homepageAudit) return { audit: homepageAudit, isHomepageAudit: true };
+  const [latest] = audits;
+  return latest ? { audit: latest, isHomepageAudit: false } : null;
+}
+
 export function findSearchIssues(input: {
   auditStartUrl: string;
   pages: SearchCheckAuditPage[];

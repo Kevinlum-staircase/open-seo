@@ -16,7 +16,9 @@ export const auditSearchCheckInputSchema = z.object({
   auditId: z
     .string()
     .optional()
-    .describe("Audit ID. If omitted, uses the latest completed audit."),
+    .describe(
+      "Audit ID. If omitted, uses the latest completed audit that started from the site's homepage, or the latest completed audit with a note if there is none.",
+    ),
   dateRange: z
     .enum(GSC_DATE_RANGES)
     .optional()
@@ -93,6 +95,9 @@ export const auditSearchCheckOutputSchema = z.looseObject({
   summary: z.looseObject({
     auditId: z.string().nullable(),
     auditDate: z.string().nullable(),
+    /** The page the audit crawled from, so a partial audit is visible. */
+    auditStartUrl: z.string().nullable(),
+    auditPagesCrawled: z.number().nullable(),
     countsByType: z.record(z.string(), z.number()),
     searchConsoleWindow: z
       .looseObject({ startDate: z.string(), endDate: z.string() })

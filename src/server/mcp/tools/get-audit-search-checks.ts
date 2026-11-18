@@ -50,7 +50,7 @@ function buildText(result: AuditSearchCheck): string {
   const { summary } = result;
   const sections = [
     summary.auditId
-      ? `Search check for audit ${summary.auditId} (${summary.auditDate ?? "date unknown"}): ${result.findings.length} findings.`
+      ? `Search check for audit ${summary.auditId} (${summary.auditDate ?? "date unknown"}, started from ${summary.auditStartUrl ?? "unknown URL"}, ${summary.auditPagesCrawled ?? "unknown"} pages crawled): ${result.findings.length} findings.`
       : "Search check could not run.",
   ];
   if (result.findings.length > 0) {
@@ -81,7 +81,7 @@ export const getAuditSearchChecksTool = {
   config: {
     title: "Get audit search checks",
     description:
-      "Cross-check the latest completed site audit against Search Console and Rank Tracking, and return only the problems on pages with real search demand: noindexed, broken, redirected or wrongly canonicalised pages that Google still shows or we track, plus high-impression pages the audit never crawled (the top ones are checked with URL Inspection). Free — reads OpenSEO state, Search Console and Rank Tracking data. Run it after get_audit_issues whenever Search Console is connected: its critical findings outrank the audit's own issue list, which weights every page the same. Without Search Console it still returns the Rank Tracking-based findings, with a note. Pass auditId to check an older audit. At most 25 never-crawled pages are listed (maxNotCrawled, up to 200); the rest are grouped by folder. Pass ignorePaths (path prefixes) to leave out sections that are noindexed on purpose. Does not save anything.",
+      "Cross-check the latest completed site audit that started from the homepage (or the latest completed audit, with a note, if none did) against Search Console and Rank Tracking, and return only the problems on pages with real search demand: noindexed, broken, redirected or wrongly canonicalised pages that Google still shows or we track, plus high-impression pages the audit never crawled (the top ones are checked with URL Inspection). Free — reads OpenSEO state, Search Console and Rank Tracking data. Run it after get_audit_issues whenever Search Console is connected: its critical findings outrank the audit's own issue list, which weights every page the same. Without Search Console it still returns the Rank Tracking-based findings, with a note. Pass auditId to check a specific audit; the summary always names the audit used, its start URL and page count. At most 25 never-crawled pages are listed (maxNotCrawled, up to 200); the rest are grouped by folder. Pass ignorePaths (path prefixes) to leave out sections that are noindexed on purpose. Does not save anything.",
     inputSchema,
     outputSchema: auditSearchCheckOutputSchema.extend(optionalMetaOutputSchema),
     annotations: {
@@ -91,7 +91,10 @@ export const getAuditSearchChecksTool = {
     },
   },
   handler: withMcpProjectAuth(async (args: Args, context) => {
-    const result = await AuditSearchCheckService.getSearchChecks(args);
+    const result = await AuditSearchCheckService.getSearchChecks({
+      ...args,
+      projectDomain: context.project.domain,
+    });
     const auditId = result.summary.auditId;
     return mcpResponse({
       text: buildText(result),

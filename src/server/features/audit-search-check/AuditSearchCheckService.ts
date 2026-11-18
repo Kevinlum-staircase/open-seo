@@ -9,6 +9,7 @@ import { AuditSearchCheckQueries } from "@/server/features/audit-search-check/au
 import {
   findSearchIssues,
   type InspectedUrl,
+  pickDefaultAudit,
   trimNotCrawled,
   type SearchConsolePageRow,
   type TrackedRankingUrl,
@@ -35,6 +36,8 @@ function emptyResult(notes: string[], auditId: string | null = null) {
     summary: {
       auditId,
       auditDate: null,
+      auditStartUrl: null,
+      auditPagesCrawled: null,
       countsByType: {},
       searchConsoleWindow: null,
       rankCheckDate: null,
@@ -147,12 +150,30 @@ async function inspectUncrawled(
 }
 
 async function getSearchChecks(
-  input: AuditSearchCheckInput & { projectId: string },
+  input: AuditSearchCheckInput & {
+    projectId: string;
+    projectDomain: string | null;
+  },
 ): Promise<AuditSearchCheck> {
-  const audit = await AuditSearchCheckQueries.getAuditToCheck(
-    input.projectId,
-    input.auditId,
-  );
+  const notes: string[] = [];
+  let audit;
+  if (input.auditId) {
+    audit = await AuditSearchCheckQueries.getAudit(
+      input.projectId,
+      input.auditId,
+    );
+  } else {
+    const completed = await AuditSearchCheckQueries.listCompletedAudits(
+      input.projectId,
+    );
+    const picked = pickDefaultAudit(completed, input.projectDomain);
+    audit = picked?.audit;
+    if (picked && !picked.isHomepageAudit) {
+      notes.push(
+        `No completed audit started from the homepage, so the latest completed audit was used (start URL ${picked.audit.startUrl}, ${picked.audit.pagesCrawled} pages). Pages it did not crawl may be reported as not crawled. Run a site audit from the homepage for a complete check.`,
+      );
+    }
+  }
   if (!audit) {
     return emptyResult([
       input.auditId
@@ -187,7 +208,7 @@ async function getSearchChecks(
     minImpressions,
   };
   let result = findSearchIssues({ ...ruleInput, inspections: [] });
-  const notes = searchConsole.note ? [searchConsole.note] : [];
+  if (searchConsole.note) notes.push(searchConsole.note);
 
   let inspectedCount = 0;
   if (searchConsole.data && maxInspections > 0) {
@@ -231,6 +252,8 @@ async function getSearchChecks(
     summary: {
       auditId: audit.id,
       auditDate: audit.completedAt ?? audit.startedAt,
+      auditStartUrl: audit.startUrl,
+      auditPagesCrawled: audit.pagesCrawled,
       countsByType,
       searchConsoleWindow: searchConsole.data?.window ?? null,
       rankCheckDate: tracking.rankCheckDate,
