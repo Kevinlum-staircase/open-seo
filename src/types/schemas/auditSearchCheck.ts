@@ -6,15 +6,19 @@ import {
 import {
   DEFAULT_DATE_RANGE,
   DEFAULT_MAX_INSPECTIONS,
+  DEFAULT_MAX_NOT_CRAWLED_SHOWN,
   DEFAULT_MIN_IMPRESSIONS,
   MAX_INSPECTIONS_CAP,
+  MAX_NOT_CRAWLED_SHOWN_CAP,
 } from "@/server/features/audit-search-check/searchCheckThresholds";
 
 export const auditSearchCheckInputSchema = z.object({
   auditId: z
     .string()
     .optional()
-    .describe("Audit ID. If omitted, uses the latest completed audit."),
+    .describe(
+      "Audit ID. If omitted, uses the latest completed audit that started from the site's homepage, or the latest completed audit with a note if there is none.",
+    ),
   dateRange: z
     .enum(GSC_DATE_RANGES)
     .optional()
@@ -37,6 +41,22 @@ export const auditSearchCheckInputSchema = z.object({
     .optional()
     .describe(
       `How many pages the audit did not crawl get a Search Console URL Inspection, default ${DEFAULT_MAX_INSPECTIONS}, maximum ${MAX_INSPECTIONS_CAP}, 0 to skip. Inspection is free but quota-limited.`,
+    ),
+  maxNotCrawled: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_NOT_CRAWLED_SHOWN_CAP)
+    .optional()
+    .describe(
+      `How many "search-page-not-crawled" findings to return in full, default ${DEFAULT_MAX_NOT_CRAWLED_SHOWN}, maximum ${MAX_NOT_CRAWLED_SHOWN_CAP}. The rest are grouped by folder in summary.notCrawledByFolder, and countsByType keeps the full count.`,
+    ),
+  ignorePaths: z
+    .array(z.string().min(1))
+    .max(50)
+    .optional()
+    .describe(
+      'Path prefixes to leave out entirely, e.g. ["/property-investment-glossary-list/", "/teams/"]. Pages under them produce no findings, are not counted and are never inspected. Use for sections that are noindexed on purpose.',
     ),
 });
 
@@ -75,12 +95,27 @@ export const auditSearchCheckOutputSchema = z.looseObject({
   summary: z.looseObject({
     auditId: z.string().nullable(),
     auditDate: z.string().nullable(),
+    /** The page the audit crawled from, so a partial audit is visible. */
+    auditStartUrl: z.string().nullable(),
+    auditPagesCrawled: z.number().nullable(),
     countsByType: z.record(z.string(), z.number()),
     searchConsoleWindow: z
       .looseObject({ startDate: z.string(), endDate: z.string() })
       .nullable(),
     rankCheckDate: z.string().nullable(),
     inspectedCount: z.number(),
+    /** Not-crawled findings beyond `maxNotCrawled`, grouped by first path folder. */
+    notCrawledByFolder: z.array(
+      z.looseObject({
+        folder: z.string(),
+        count: z.number(),
+        impressions: z.number(),
+        clicks: z.number(),
+      }),
+    ),
+    /** Pages with search demand left out because of `ignorePaths`. */
+    ignoredPages: z.number(),
+    ignoredPaths: z.array(z.string()),
   }),
   /** Plain-language caveats: skipped data sources, other-host URLs, no audit. */
   notes: z.array(z.string()),

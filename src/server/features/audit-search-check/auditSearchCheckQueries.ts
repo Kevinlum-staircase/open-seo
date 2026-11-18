@@ -8,13 +8,19 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { audits, auditPages } from "@/db/schema";
 
-/** The audit to check: the given one, or the newest that finished. */
-async function getAuditToCheck(projectId: string, auditId?: string) {
+/** A specific audit of the project, whatever its status. */
+async function getAudit(projectId: string, auditId: string) {
   return db.query.audits.findFirst({
-    where: auditId
-      ? and(eq(audits.id, auditId), eq(audits.projectId, projectId))
-      : and(eq(audits.projectId, projectId), eq(audits.status, "completed")),
+    where: and(eq(audits.id, auditId), eq(audits.projectId, projectId)),
+  });
+}
+
+/** Recent completed audits, newest first. */
+async function listCompletedAudits(projectId: string) {
+  return db.query.audits.findMany({
+    where: and(eq(audits.projectId, projectId), eq(audits.status, "completed")),
     orderBy: desc(audits.startedAt),
+    limit: 50,
   });
 }
 
@@ -34,6 +40,7 @@ async function getPagesForSearchCheck(auditId: string) {
 }
 
 export const AuditSearchCheckQueries = {
-  getAuditToCheck,
+  getAudit,
+  listCompletedAudits,
   getPagesForSearchCheck,
 };
