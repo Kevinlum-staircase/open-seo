@@ -11,6 +11,7 @@ import {
   IssuesView,
   resolveIssueSeverity,
 } from "@/client/features/audit/results/IssuesView";
+import { SearchImpactPanel } from "@/client/features/audit/results/SearchImpactPanel";
 import { PagesTable } from "@/client/features/audit/results/PagesTable";
 import {
   ExportDropdown,
@@ -99,6 +100,12 @@ export function ResultsView({
         totalLighthouse={lighthouse.length}
         averageResponseMs={stats.averageResponseMs}
         lighthouseSummary={stats.lighthouseSummary}
+      />
+
+      <SearchImpactPanel
+        key={audit.id}
+        projectId={projectId}
+        auditId={audit.id}
       />
 
       <div className="card bg-base-100 border border-base-300">
