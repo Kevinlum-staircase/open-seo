@@ -3,8 +3,10 @@ import {
   isExpectedGrantFailure,
 } from "@/server/features/gsc/services/GscService";
 import { GSC_MAX_ROW_LIMIT } from "@/server/features/gsc/searchAnalytics";
+import { ProjectContextService } from "@/server/features/project-context/services/ProjectContextService";
 import { RankTrackingService } from "@/server/features/rank-tracking/services/RankTrackingService";
 import { GscApiError, GscNotConnectedError } from "@/server/lib/gscErrors";
+import { parseIgnorePaths } from "@/server/features/audit-search-check/ignorePaths";
 import { AuditSearchCheckQueries } from "@/server/features/audit-search-check/auditSearchCheckQueries";
 import {
   findSearchIssues,
@@ -24,6 +26,8 @@ import type {
   AuditSearchCheck,
   AuditSearchCheckInput,
 } from "@/types/schemas/auditSearchCheck";
+
+const DELIBERATELY_NOINDEXED_SLUG = "deliberately-noindexed";
 
 type SearchConsoleData = {
   rows: SearchConsolePageRow[];
@@ -149,6 +153,16 @@ async function inspectUncrawled(
   }
 }
 
+/** The default ignore list: path prefixes the project says are noindexed on
+ *  purpose, kept in Project Context so every consumer shares one list. */
+async function loadDeliberatelyNoindexed(projectId: string) {
+  const context = await ProjectContextService.getProjectContext(projectId);
+  const section = context.customSections.find(
+    (custom) => custom.slug === DELIBERATELY_NOINDEXED_SLUG,
+  );
+  return parseIgnorePaths(section?.content);
+}
+
 async function getSearchChecks(
   input: AuditSearchCheckInput & {
     projectId: string;
@@ -198,7 +212,8 @@ async function getSearchChecks(
     loadTrackedUrls(input.projectId),
   ]);
 
-  const ignorePaths = input.ignorePaths ?? [];
+  const ignorePaths =
+    input.ignorePaths ?? (await loadDeliberatelyNoindexed(input.projectId));
   const ruleInput = {
     ignorePaths,
     auditStartUrl: audit.startUrl,
